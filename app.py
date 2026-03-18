@@ -25,7 +25,7 @@ IMG_SIZE = 128
 DEFAULT_QUALITY = 85
 DEFAULT_SPEED = 100
 SCREEN_COUNT = 5
-PREVIEW_SIZE = 168
+PREVIEW_SIZE = 288
 
 
 def appdata_dir() -> Path:
@@ -441,8 +441,8 @@ class KeeperUI:
 
         self.root = tk.Tk()
         self.root.title(APP_NAME)
-        self.root.geometry("980x620")
-        self.root.minsize(900, 560)
+        self.root.geometry("1320x860")
+        self.root.minsize(1180, 760)
         self.root.configure(bg=self.colors["bg"])
         self.root.protocol("WM_DELETE_WINDOW", self.hide)
 
@@ -501,7 +501,7 @@ class KeeperUI:
             row_base = i * 2
             tk.Label(grid, text=self.t("screen_n", n=i+1), bg=self.colors["bg"], fg=self.colors["accent"], font=("Segoe UI", 10, "bold")).grid(row=row_base, column=0, sticky="nw", pady=(8, 2), padx=(8, 4))
 
-            preview = tk.Label(grid, text=self.t("no_preview"), width=24, height=11, bg=self.colors["input"], fg=self.colors["muted"], relief="groove")
+            preview = tk.Label(grid, text=self.t("no_preview"), width=1, height=1, bg=self.colors["input"], fg=self.colors["muted"], relief="groove", padx=8, pady=8)
             preview.grid(row=row_base, column=1, rowspan=2, sticky="w", pady=(8, 8), padx=(0, 8))
             self.preview_labels.append(preview)
 
