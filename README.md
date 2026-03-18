@@ -29,6 +29,10 @@ The image upload path is based on the working approach used by:
 
 Instead of relying on fragile official API flows, it uses the proven `Draw/SendHttpGif` payload strategy (JPEG frames in base64 with screen targeting and frame offsets).
 
+## Latest release
+
+- v0.1.3: https://github.com/raishack/divoom-times-gate-controller/releases/tag/v0.1.3
+
 ## Run from source (Windows)
 
 ```powershell
