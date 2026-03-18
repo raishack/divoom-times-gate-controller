@@ -25,6 +25,7 @@ IMG_SIZE = 128
 DEFAULT_QUALITY = 85
 DEFAULT_SPEED = 100
 SCREEN_COUNT = 5
+PREVIEW_SIZE = 168
 
 
 def appdata_dir() -> Path:
@@ -330,6 +331,7 @@ class KeeperUI:
                 "startup_toggle_failed": "Failed toggling startup: {err}",
                 "no_device_scan": "No Divoom device detected in local subnet scan",
                 "detected_one_device": "Detected 1 device: {ip}\n\nSet it as active IP?",
+                "detected_multi_devices": "Detected devices:\n- {list}\n\nUse selected device from the dialog.",
                 "scan_keep_ip": "Scan finished. Kept current IP unchanged.",
                 "active_ip_updated": "Active IP updated to {ip}",
                 "scan_failed": "Scan failed: {err}",
@@ -337,6 +339,12 @@ class KeeperUI:
                 "device_offline": "Device {ip}: OFFLINE",
                 "startup_on": "Auto-start: ON (click to disable)",
                 "startup_off": "Auto-start: OFF (click to enable)",
+                "tray_open": "Open",
+                "tray_send_now": "Send now",
+                "tray_scan_network": "Scan network",
+                "tray_quit": "Quit",
+                "media_gif": "GIF (animated)",
+                "media_img": "IMG",
             },
             "es": {
                 "connection_schedule": "Conexión y programación",
@@ -374,6 +382,7 @@ class KeeperUI:
                 "startup_toggle_failed": "Error al cambiar inicio automático: {err}",
                 "no_device_scan": "No se detectó ningún Divoom en el escaneo de subred local",
                 "detected_one_device": "Se detectó 1 dispositivo: {ip}\n\n¿Usarlo como IP activa?",
+                "detected_multi_devices": "Dispositivos detectados:\n- {list}\n\nUsa el diálogo para elegir el dispositivo.",
                 "scan_keep_ip": "Escaneo terminado. Se mantiene la IP actual.",
                 "active_ip_updated": "IP activa actualizada a {ip}",
                 "scan_failed": "Error de escaneo: {err}",
@@ -381,6 +390,12 @@ class KeeperUI:
                 "device_offline": "Dispositivo {ip}: DESCONECTADO",
                 "startup_on": "Autoarranque: ON (clic para desactivar)",
                 "startup_off": "Autoarranque: OFF (clic para activar)",
+                "tray_open": "Abrir",
+                "tray_send_now": "Enviar ahora",
+                "tray_scan_network": "Buscar en red",
+                "tray_quit": "Salir",
+                "media_gif": "GIF (animado)",
+                "media_img": "IMG",
             },
         }
         lang = self.lang if self.lang in i18n else "en"
@@ -486,7 +501,7 @@ class KeeperUI:
             row_base = i * 2
             tk.Label(grid, text=self.t("screen_n", n=i+1), bg=self.colors["bg"], fg=self.colors["accent"], font=("Segoe UI", 10, "bold")).grid(row=row_base, column=0, sticky="nw", pady=(8, 2), padx=(8, 4))
 
-            preview = tk.Label(grid, text=self.t("no_preview"), width=16, height=8, bg=self.colors["input"], fg=self.colors["muted"], relief="groove")
+            preview = tk.Label(grid, text=self.t("no_preview"), width=24, height=11, bg=self.colors["input"], fg=self.colors["muted"], relief="groove")
             preview.grid(row=row_base, column=1, rowspan=2, sticky="w", pady=(8, 8), padx=(0, 8))
             self.preview_labels.append(preview)
 
@@ -567,7 +582,7 @@ class KeeperUI:
             if is_gif:
                 frames = []
                 for frame in ImageSequence.Iterator(img):
-                    thumb = frame.convert("RGB").resize((96, 96), Image.LANCZOS)
+                    thumb = frame.convert("RGB").resize((PREVIEW_SIZE, PREVIEW_SIZE), Image.LANCZOS)
                     frames.append(ImageTk.PhotoImage(thumb))
                     if len(frames) >= 24:
                         break
@@ -579,13 +594,13 @@ class KeeperUI:
                     self.preview_anim_after_id[idx] = self.root.after(180, lambda: self._tick_preview_anim(idx))
             else:
                 frame = img.convert("RGB")
-                thumb = frame.resize((96, 96), Image.LANCZOS)
+                thumb = frame.resize((PREVIEW_SIZE, PREVIEW_SIZE), Image.LANCZOS)
                 tk_img = ImageTk.PhotoImage(thumb)
                 label.configure(image=tk_img, text="")
                 self.preview_refs[idx] = tk_img
 
             ext = Path(path).suffix.lower().lstrip(".")
-            note = "GIF(animated)" if is_gif else ext.upper() if ext else "IMG"
+            note = self.t("media_gif") if is_gif else ext.upper() if ext else self.t("media_img")
             meta.configure(text=f"{note} • {img.width}x{img.height} • {Path(path).name}")
         except Exception as e:
             label.configure(image="", text=self.t("preview_error"), bg=self.colors["preview_bg"], fg=self.colors["err"])
@@ -676,6 +691,26 @@ class KeeperUI:
         self.update_startup_button()
         self.refresh_health()
 
+    def rebuild_window(self) -> None:
+        if self.root is None:
+            return
+        was_visible = self.root.state() != "withdrawn"
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+        self.root = None
+        self.entries = []
+        self.preview_labels = []
+        self.preview_meta_labels = []
+        self.preview_refs = [None] * SCREEN_COUNT
+        self.preview_anim_frames = [[] for _ in range(SCREEN_COUNT)]
+        self.preview_anim_idx = [0] * SCREEN_COUNT
+        self.preview_anim_after_id = [None] * SCREEN_COUNT
+        self.ensure_window()
+        if not was_visible:
+            self.hide()
+
     def on_language_changed(self) -> None:
         if self.lang_var is None:
             return
@@ -683,7 +718,8 @@ class KeeperUI:
         self.lang = "es" if selected.lower().startswith("es") else "en"
         self.app.cfg.data["ui_lang"] = self.lang
         self.app.cfg.save()
-        messagebox.showinfo(APP_NAME, "Language updated. Reopen the window to refresh all labels." if self.lang == "en" else "Idioma actualizado. Reabre la ventana para refrescar todas las etiquetas.")
+        self.rebuild_window()
+        self.app.refresh_tray_menu()
 
     def choose_device_dialog(self, found: List[str], suggested: str) -> Optional[str]:
         if self.root is None:
@@ -856,6 +892,17 @@ class KeeperApp:
         self.ui = KeeperUI(self)
         self.icon: Optional[pystray.Icon] = None
 
+    def refresh_tray_menu(self) -> None:
+        if not self.icon:
+            return
+        self.icon.menu = pystray.Menu(
+            Item(self.ui.t("tray_open"), self.open_ui),
+            Item(self.ui.t("tray_send_now"), self.send_now),
+            Item(self.ui.t("tray_scan_network"), self.scan_network),
+            Item(self.ui.t("tray_quit"), self.quit),
+        )
+        self.icon.update_menu()
+
     def send_screen(self, screen: int, path: str) -> bool:
         if not Path(path).exists():
             logging.warning("Screen %s skipped, missing file: %s", screen, path)
@@ -943,10 +990,10 @@ class KeeperApp:
             threading.Thread(target=lambda: self.send_all(reason="startup"), daemon=True).start()
 
         menu = pystray.Menu(
-            Item("Open", self.open_ui),
-            Item("Send now", self.send_now),
-            Item("Scan network", self.scan_network),
-            Item("Quit", self.quit),
+            Item(self.ui.t("tray_open"), self.open_ui),
+            Item(self.ui.t("tray_send_now"), self.send_now),
+            Item(self.ui.t("tray_scan_network"), self.scan_network),
+            Item(self.ui.t("tray_quit"), self.quit),
         )
         self.icon = pystray.Icon("divoom_keeper", self.tray_image(), APP_NAME, menu)
 
