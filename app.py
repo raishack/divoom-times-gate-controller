@@ -59,6 +59,7 @@ def default_config() -> dict:
         "resend_on_startup": True,
         "start_with_windows": True,
         "ui_theme": "dark",
+        "ui_lang": "en",
         "screens": [{"path": ""} for _ in range(SCREEN_COUNT)],
     }
 
@@ -286,7 +287,105 @@ class KeeperUI:
         self.startup_var = None
         self.theme_var = None
         self.theme_box = None
+        self.lang_var = None
+        self.lang_box = None
+        self.lang = str(self.app.cfg.data.get("ui_lang", "en"))
         self.colors = {}
+
+    def t(self, key: str, **kwargs) -> str:
+        i18n = {
+            "en": {
+                "connection_schedule": "Connection & schedule",
+                "divoom_ip": "Divoom IP",
+                "interval_min": "Interval (min)",
+                "quality": "Quality",
+                "speed": "Speed",
+                "theme": "Theme",
+                "language": "Language",
+                "resend_on_startup": "Resend on startup",
+                "start_with_windows": "Start with Windows",
+                "device_checking": "Device: checking...",
+                "screen_slots": "Screen slots (with preview)",
+                "screen_n": "Screen {n}",
+                "no_preview": "No preview",
+                "browse": "Browse",
+                "send": "Send",
+                "save": "Save",
+                "send_all": "Send all now",
+                "scan_lan": "Scan Divoom in LAN",
+                "hide_tray": "Hide to tray",
+                "no_file_selected": "No file selected",
+                "preview_error": "Preview error",
+                "preview_failed": "Preview failed: {err}",
+                "select_device": "Select Divoom device",
+                "detected_devices": "Detected Divoom-like devices",
+                "use_selected": "Use selected",
+                "cancel": "Cancel",
+                "pick_media": "Select image/GIF for screen {n}",
+                "config_saved": "Config saved",
+                "save_failed": "Save failed: {err}",
+                "screen_no_file": "Screen {n} has no file",
+                "startup_enabled": "Startup enabled",
+                "startup_disabled": "Startup disabled",
+                "startup_toggle_failed": "Failed toggling startup: {err}",
+                "no_device_scan": "No Divoom device detected in local subnet scan",
+                "detected_one_device": "Detected 1 device: {ip}\n\nSet it as active IP?",
+                "scan_keep_ip": "Scan finished. Kept current IP unchanged.",
+                "active_ip_updated": "Active IP updated to {ip}",
+                "scan_failed": "Scan failed: {err}",
+                "device_online": "Device {ip}: ONLINE",
+                "device_offline": "Device {ip}: OFFLINE",
+                "startup_on": "Auto-start: ON (click to disable)",
+                "startup_off": "Auto-start: OFF (click to enable)",
+            },
+            "es": {
+                "connection_schedule": "Conexión y programación",
+                "divoom_ip": "IP de Divoom",
+                "interval_min": "Intervalo (min)",
+                "quality": "Calidad",
+                "speed": "Velocidad",
+                "theme": "Tema",
+                "language": "Idioma",
+                "resend_on_startup": "Reenviar al iniciar",
+                "start_with_windows": "Iniciar con Windows",
+                "device_checking": "Dispositivo: comprobando...",
+                "screen_slots": "Ranuras de pantalla (con vista previa)",
+                "screen_n": "Pantalla {n}",
+                "no_preview": "Sin vista previa",
+                "browse": "Buscar",
+                "send": "Enviar",
+                "save": "Guardar",
+                "send_all": "Enviar todo ahora",
+                "scan_lan": "Buscar Divoom en LAN",
+                "hide_tray": "Ocultar en bandeja",
+                "no_file_selected": "No hay archivo seleccionado",
+                "preview_error": "Error de vista previa",
+                "preview_failed": "Fallo de vista previa: {err}",
+                "select_device": "Seleccionar dispositivo Divoom",
+                "detected_devices": "Dispositivos Divoom detectados",
+                "use_selected": "Usar seleccionado",
+                "cancel": "Cancelar",
+                "pick_media": "Seleccionar imagen/GIF para pantalla {n}",
+                "config_saved": "Configuración guardada",
+                "save_failed": "Error al guardar: {err}",
+                "screen_no_file": "La pantalla {n} no tiene archivo",
+                "startup_enabled": "Inicio automático activado",
+                "startup_disabled": "Inicio automático desactivado",
+                "startup_toggle_failed": "Error al cambiar inicio automático: {err}",
+                "no_device_scan": "No se detectó ningún Divoom en el escaneo de subred local",
+                "detected_one_device": "Se detectó 1 dispositivo: {ip}\n\n¿Usarlo como IP activa?",
+                "scan_keep_ip": "Escaneo terminado. Se mantiene la IP actual.",
+                "active_ip_updated": "IP activa actualizada a {ip}",
+                "scan_failed": "Error de escaneo: {err}",
+                "device_online": "Dispositivo {ip}: EN LÍNEA",
+                "device_offline": "Dispositivo {ip}: DESCONECTADO",
+                "startup_on": "Autoarranque: ON (clic para desactivar)",
+                "startup_off": "Autoarranque: OFF (clic para activar)",
+            },
+        }
+        lang = self.lang if self.lang in i18n else "en"
+        template = i18n[lang].get(key, i18n["en"].get(key, key))
+        return template.format(**kwargs)
 
     def _palette(self, theme: str) -> dict:
         if theme == "light":
@@ -322,6 +421,7 @@ class KeeperUI:
             return
 
         theme = str(self.app.cfg.data.get("ui_theme", "dark")).lower()
+        self.lang = str(self.app.cfg.data.get("ui_lang", "en")).lower()
         self.colors = self._palette("light" if theme == "light" else "dark")
 
         self.root = tk.Tk()
@@ -346,41 +446,47 @@ class KeeperUI:
         self.resend_var = tk.BooleanVar(master=self.root, value=bool(self.app.cfg.data.get("resend_on_startup", True)))
         self.startup_var = tk.BooleanVar(master=self.root, value=bool(self.app.cfg.data.get("start_with_windows", True)))
         self.theme_var = tk.StringVar(master=self.root, value=("Light" if theme == "light" else "Dark"))
+        self.lang_var = tk.StringVar(master=self.root, value=("Español" if self.lang == "es" else "English"))
 
-        top = ttk.LabelFrame(self.root, text="Connection & schedule", style="Card.TLabelframe")
+        top = ttk.LabelFrame(self.root, text=self.t("connection_schedule"), style="Card.TLabelframe")
         top.pack(fill="x", padx=12, pady=(12, 8))
 
-        tk.Label(top, text="Divoom IP", bg=self.colors["bg"], fg=self.colors["fg"]).grid(row=0, column=0, sticky="w")
+        tk.Label(top, text=self.t("divoom_ip"), bg=self.colors["bg"], fg=self.colors["fg"]).grid(row=0, column=0, sticky="w")
         tk.Entry(top, textvariable=self.ip_var, width=16, bg=self.colors["input"], fg=self.colors["fg"], insertbackground=self.colors["fg"]).grid(row=0, column=1, sticky="w", padx=6)
 
-        tk.Label(top, text="Interval (min)", bg=self.colors["bg"], fg=self.colors["fg"]).grid(row=0, column=2, sticky="w")
+        tk.Label(top, text=self.t("interval_min"), bg=self.colors["bg"], fg=self.colors["fg"]).grid(row=0, column=2, sticky="w")
         tk.Entry(top, textvariable=self.interval_var, width=8, bg=self.colors["input"], fg=self.colors["fg"], insertbackground=self.colors["fg"]).grid(row=0, column=3, sticky="w", padx=6)
 
-        tk.Label(top, text="Quality", bg=self.colors["bg"], fg=self.colors["fg"]).grid(row=0, column=4, sticky="w")
+        tk.Label(top, text=self.t("quality"), bg=self.colors["bg"], fg=self.colors["fg"]).grid(row=0, column=4, sticky="w")
         tk.Entry(top, textvariable=self.quality_var, width=6, bg=self.colors["input"], fg=self.colors["fg"], insertbackground=self.colors["fg"]).grid(row=0, column=5, sticky="w", padx=6)
 
-        tk.Label(top, text="Speed", bg=self.colors["bg"], fg=self.colors["fg"]).grid(row=0, column=6, sticky="w")
+        tk.Label(top, text=self.t("speed"), bg=self.colors["bg"], fg=self.colors["fg"]).grid(row=0, column=6, sticky="w")
         tk.Entry(top, textvariable=self.speed_var, width=6, bg=self.colors["input"], fg=self.colors["fg"], insertbackground=self.colors["fg"]).grid(row=0, column=7, sticky="w", padx=6)
 
-        tk.Label(top, text="Theme", bg=self.colors["bg"], fg=self.colors["fg"]).grid(row=0, column=8, sticky="w")
+        tk.Label(top, text=self.t("theme"), bg=self.colors["bg"], fg=self.colors["fg"]).grid(row=0, column=8, sticky="w")
         self.theme_box = ttk.Combobox(top, textvariable=self.theme_var, values=["Dark", "Light"], width=8, state="readonly")
         self.theme_box.grid(row=0, column=9, sticky="w", padx=6)
         self.theme_box.bind("<<ComboboxSelected>>", lambda _e: self.on_theme_changed())
 
-        tk.Checkbutton(top, text="Resend on startup", variable=self.resend_var, bg=self.colors["bg"], fg=self.colors["fg"], selectcolor=self.colors["bg"], activebackground=self.colors["bg"]).grid(row=1, column=0, columnspan=3, sticky="w", pady=6)
-        tk.Checkbutton(top, text="Start with Windows", variable=self.startup_var, bg=self.colors["bg"], fg=self.colors["fg"], selectcolor=self.colors["bg"], activebackground=self.colors["bg"]).grid(row=1, column=3, columnspan=3, sticky="w", pady=6)
+        tk.Label(top, text=self.t("language"), bg=self.colors["bg"], fg=self.colors["fg"]).grid(row=0, column=10, sticky="w")
+        self.lang_box = ttk.Combobox(top, textvariable=self.lang_var, values=["English", "Español"], width=10, state="readonly")
+        self.lang_box.grid(row=0, column=11, sticky="w", padx=6)
+        self.lang_box.bind("<<ComboboxSelected>>", lambda _e: self.on_language_changed())
 
-        self.health_label = tk.Label(top, text="Device: checking...", bg=self.colors["bg"], fg=self.colors["warn"], font=("Segoe UI", 9, "bold"))
+        tk.Checkbutton(top, text=self.t("resend_on_startup"), variable=self.resend_var, bg=self.colors["bg"], fg=self.colors["fg"], selectcolor=self.colors["bg"], activebackground=self.colors["bg"]).grid(row=1, column=0, columnspan=3, sticky="w", pady=6)
+        tk.Checkbutton(top, text=self.t("start_with_windows"), variable=self.startup_var, bg=self.colors["bg"], fg=self.colors["fg"], selectcolor=self.colors["bg"], activebackground=self.colors["bg"]).grid(row=1, column=3, columnspan=3, sticky="w", pady=6)
+
+        self.health_label = tk.Label(top, text=self.t("device_checking"), bg=self.colors["bg"], fg=self.colors["warn"], font=("Segoe UI", 9, "bold"))
         self.health_label.grid(row=1, column=6, columnspan=2, sticky="e", padx=6)
 
-        grid = ttk.LabelFrame(self.root, text="Screen slots (with preview)", style="Card.TLabelframe")
+        grid = ttk.LabelFrame(self.root, text=self.t("screen_slots"), style="Card.TLabelframe")
         grid.pack(fill="both", expand=True, padx=12, pady=8)
 
         for i in range(SCREEN_COUNT):
             row_base = i * 2
-            tk.Label(grid, text=f"Screen {i+1}", bg=self.colors["bg"], fg=self.colors["accent"], font=("Segoe UI", 10, "bold")).grid(row=row_base, column=0, sticky="nw", pady=(8, 2), padx=(8, 4))
+            tk.Label(grid, text=self.t("screen_n", n=i+1), bg=self.colors["bg"], fg=self.colors["accent"], font=("Segoe UI", 10, "bold")).grid(row=row_base, column=0, sticky="nw", pady=(8, 2), padx=(8, 4))
 
-            preview = tk.Label(grid, text="No preview", width=16, height=8, bg=self.colors["input"], fg=self.colors["muted"], relief="groove")
+            preview = tk.Label(grid, text=self.t("no_preview"), width=16, height=8, bg=self.colors["input"], fg=self.colors["muted"], relief="groove")
             preview.grid(row=row_base, column=1, rowspan=2, sticky="w", pady=(8, 8), padx=(0, 8))
             self.preview_labels.append(preview)
 
@@ -392,8 +498,8 @@ class KeeperUI:
 
             actions = tk.Frame(grid, bg=self.colors["bg"])
             actions.grid(row=row_base, column=3, sticky="e", padx=4)
-            tk.Button(actions, text="Browse", command=lambda idx=i: self.pick_file(idx), bg=self.colors["button"], fg=self.colors["fg"]).pack(side="left", padx=2)
-            tk.Button(actions, text="Send", command=lambda idx=i: self.send_one(idx), bg=self.colors["accent"], fg=self.colors["fg"]).pack(side="left", padx=2)
+            tk.Button(actions, text=self.t("browse"), command=lambda idx=i: self.pick_file(idx), bg=self.colors["button"], fg=self.colors["fg"]).pack(side="left", padx=2)
+            tk.Button(actions, text=self.t("send"), command=lambda idx=i: self.send_one(idx), bg=self.colors["accent"], fg=self.colors["fg"]).pack(side="left", padx=2)
 
             meta = tk.Label(grid, text="", bg=self.colors["bg"], fg=self.colors["muted"], anchor="w")
             meta.grid(row=row_base + 1, column=2, columnspan=2, sticky="we", padx=6, pady=(0, 6))
@@ -408,13 +514,13 @@ class KeeperUI:
 
         footer = tk.Frame(self.root, bg=self.colors["bg"])
         footer.pack(fill="x", padx=10, pady=8)
-        tk.Button(footer, text="Save", command=self.save, bg=self.colors["button"], fg=self.colors["fg"]).pack(side="left")
-        tk.Button(footer, text="Send all now", command=self.send_all_now, bg=self.colors["accent"], fg=self.colors["fg"]).pack(side="left", padx=8)
-        tk.Button(footer, text="Scan Divoom in LAN", command=self.scan_devices, bg=self.colors["accent"], fg=self.colors["fg"]).pack(side="left", padx=8)
+        tk.Button(footer, text=self.t("save"), command=self.save, bg=self.colors["button"], fg=self.colors["fg"]).pack(side="left")
+        tk.Button(footer, text=self.t("send_all"), command=self.send_all_now, bg=self.colors["accent"], fg=self.colors["fg"]).pack(side="left", padx=8)
+        tk.Button(footer, text=self.t("scan_lan"), command=self.scan_devices, bg=self.colors["accent"], fg=self.colors["fg"]).pack(side="left", padx=8)
         self.startup_toggle_btn = tk.Button(footer, command=self.toggle_startup_now, bg=self.colors["button"], fg=self.colors["fg"])
         self.startup_toggle_btn.pack(side="left", padx=8)
         self.update_startup_button()
-        tk.Button(footer, text="Hide to tray", command=self.hide, bg=self.colors["button"], fg=self.colors["fg"]).pack(side="right")
+        tk.Button(footer, text=self.t("hide_tray"), command=self.hide, bg=self.colors["button"], fg=self.colors["fg"]).pack(side="right")
 
     def _cancel_preview_anim(self, idx: int) -> None:
         if self.root is not None and self.preview_anim_after_id[idx] is not None:
@@ -449,8 +555,8 @@ class KeeperUI:
         self._cancel_preview_anim(idx)
 
         if not path or not Path(path).exists():
-            label.configure(image="", text="No preview", bg=self.colors["input"], fg=self.colors["muted"])
-            meta.configure(text="No file selected")
+            label.configure(image="", text=self.t("no_preview"), bg=self.colors["input"], fg=self.colors["muted"])
+            meta.configure(text=self.t("no_file_selected"))
             self.preview_refs[idx] = None
             return
 
@@ -482,8 +588,8 @@ class KeeperUI:
             note = "GIF(animated)" if is_gif else ext.upper() if ext else "IMG"
             meta.configure(text=f"{note} • {img.width}x{img.height} • {Path(path).name}")
         except Exception as e:
-            label.configure(image="", text="Preview error", bg=self.colors["preview_bg"], fg=self.colors["err"])
-            meta.configure(text=f"Preview failed: {e}")
+            label.configure(image="", text=self.t("preview_error"), bg=self.colors["preview_bg"], fg=self.colors["err"])
+            meta.configure(text=self.t("preview_failed", err=e))
             self.preview_refs[idx] = None
 
     def probe_health(self) -> bool:
@@ -504,9 +610,9 @@ class KeeperUI:
                 if self.health_label is None:
                     return
                 if ok:
-                    self.health_label.configure(text=f"Device {ip}: ONLINE", fg=self.colors["ok"])
+                    self.health_label.configure(text=self.t("device_online", ip=ip), fg=self.colors["ok"])
                 else:
-                    self.health_label.configure(text=f"Device {ip}: OFFLINE", fg=self.colors["err"])
+                    self.health_label.configure(text=self.t("device_offline", ip=ip), fg=self.colors["err"])
                 if self.root is not None:
                     self.root.after(15000, self.refresh_health)
 
@@ -570,19 +676,28 @@ class KeeperUI:
         self.update_startup_button()
         self.refresh_health()
 
+    def on_language_changed(self) -> None:
+        if self.lang_var is None:
+            return
+        selected = self.lang_var.get()
+        self.lang = "es" if selected.lower().startswith("es") else "en"
+        self.app.cfg.data["ui_lang"] = self.lang
+        self.app.cfg.save()
+        messagebox.showinfo(APP_NAME, "Language updated. Reopen the window to refresh all labels." if self.lang == "en" else "Idioma actualizado. Reabre la ventana para refrescar todas las etiquetas.")
+
     def choose_device_dialog(self, found: List[str], suggested: str) -> Optional[str]:
         if self.root is None:
             return None
 
         result = {"ip": None}
         dlg = tk.Toplevel(self.root)
-        dlg.title("Select Divoom device")
+        dlg.title(self.t("select_device"))
         dlg.geometry("360x280")
         dlg.configure(bg=self.colors["bg"])
         dlg.transient(self.root)
         dlg.grab_set()
 
-        tk.Label(dlg, text="Detected Divoom-like devices", bg=self.colors["bg"], fg=self.colors["fg"], font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=10, pady=(10, 4))
+        tk.Label(dlg, text=self.t("detected_devices"), bg=self.colors["bg"], fg=self.colors["fg"], font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=10, pady=(10, 4))
 
         lst = tk.Listbox(dlg, bg=self.colors["input"], fg=self.colors["fg"], selectbackground=self.colors["accent"], height=10)
         for ip in found:
@@ -602,15 +717,15 @@ class KeeperUI:
 
         btns = tk.Frame(dlg, bg=self.colors["bg"])
         btns.pack(fill="x", padx=10, pady=10)
-        tk.Button(btns, text="Use selected", command=use_selected, bg=self.colors["accent"], fg=self.colors["fg"]).pack(side="left")
-        tk.Button(btns, text="Cancel", command=dlg.destroy, bg=self.colors["button"], fg=self.colors["fg"]).pack(side="right")
+        tk.Button(btns, text=self.t("use_selected"), command=use_selected, bg=self.colors["accent"], fg=self.colors["fg"]).pack(side="left")
+        tk.Button(btns, text=self.t("cancel"), command=dlg.destroy, bg=self.colors["button"], fg=self.colors["fg"]).pack(side="right")
 
         self.root.wait_window(dlg)
         return result["ip"]
 
     def pick_file(self, idx: int) -> None:
         path = filedialog.askopenfilename(
-            title=f"Select image/GIF for screen {idx+1}",
+            title=self.t("pick_media", n=idx+1),
             filetypes=[("Images", "*.png *.jpg *.jpeg *.gif *.bmp *.webp"), ("All", "*.*")],
         )
         if path:
@@ -635,15 +750,15 @@ class KeeperUI:
             self.update_startup_button()
             self.app.scheduler.trigger_now()
             self.refresh_health()
-            messagebox.showinfo(APP_NAME, "Config saved")
+            messagebox.showinfo(APP_NAME, self.t("config_saved"))
         except Exception as e:
             logging.exception("Save failed")
-            messagebox.showerror(APP_NAME, f"Save failed: {e}")
+            messagebox.showerror(APP_NAME, self.t("save_failed", err=e))
 
     def send_one(self, idx: int) -> None:
         path = self.entries[idx].get().strip()
         if not path:
-            messagebox.showwarning(APP_NAME, f"Screen {idx+1} has no file")
+            messagebox.showwarning(APP_NAME, self.t("screen_no_file", n=idx+1))
             return
         self.app.send_screen(idx + 1, path)
 
@@ -657,9 +772,9 @@ class KeeperUI:
         if btn is None:
             return
         if enabled:
-            btn.configure(text="Auto-start: ON (click to disable)", bg=self.colors["ok"], fg=self.colors["bg"])
+            btn.configure(text=self.t("startup_on"), bg=self.colors["ok"], fg=self.colors["bg"])
         else:
-            btn.configure(text="Auto-start: OFF (click to enable)", bg=self.colors["button"], fg=self.colors["fg"])
+            btn.configure(text=self.t("startup_off"), bg=self.colors["button"], fg=self.colors["fg"])
 
     def toggle_startup_now(self) -> None:
         try:
@@ -670,9 +785,9 @@ class KeeperUI:
             self.app.cfg.data["start_with_windows"] = enabled
             self.app.cfg.save()
             self.update_startup_button()
-            messagebox.showinfo(APP_NAME, f"Startup {'enabled' if enabled else 'disabled'}")
+            messagebox.showinfo(APP_NAME, self.t("startup_enabled") if enabled else self.t("startup_disabled"))
         except Exception as e:
-            messagebox.showerror(APP_NAME, f"Failed toggling startup: {e}")
+            messagebox.showerror(APP_NAME, self.t("startup_toggle_failed", err=e))
 
     def scan_devices(self) -> None:
         self.save()
@@ -684,7 +799,7 @@ class KeeperUI:
 
                 def done():
                     if not found:
-                        messagebox.showwarning(APP_NAME, "No Divoom device detected in local subnet scan")
+                        messagebox.showwarning(APP_NAME, self.t("no_device_scan"))
                         return
 
                     current = self.ip_var.get().strip() if self.ip_var else ""
@@ -693,17 +808,17 @@ class KeeperUI:
                     if len(found) == 1:
                         apply_ip = messagebox.askyesno(
                             APP_NAME,
-                            f"Detected 1 device: {chosen}\n\nSet it as active IP?",
+                            self.t("detected_one_device", ip=chosen),
                         )
                         if not apply_ip:
                             if current:
-                                messagebox.showinfo(APP_NAME, "Scan finished. Kept current IP unchanged.")
+                                messagebox.showinfo(APP_NAME, self.t("scan_keep_ip"))
                             return
                     else:
                         selected = self.choose_device_dialog(found, suggested=chosen)
                         if not selected:
                             if current:
-                                messagebox.showinfo(APP_NAME, "Scan finished. Kept current IP unchanged.")
+                                messagebox.showinfo(APP_NAME, self.t("scan_keep_ip"))
                             return
                         chosen = selected
 
@@ -712,14 +827,14 @@ class KeeperUI:
                     self.app.cfg.data["device_ip"] = chosen
                     self.app.cfg.save()
                     self.refresh_health()
-                    messagebox.showinfo(APP_NAME, f"Active IP updated to {chosen}")
+                    messagebox.showinfo(APP_NAME, self.t("active_ip_updated", ip=chosen))
 
                 if self.root is not None:
                     self.root.after(0, done)
             except Exception as e:
                 logging.exception("Scan failed: %s", e)
                 if self.root is not None:
-                    self.root.after(0, lambda: messagebox.showerror(APP_NAME, f"Scan failed: {e}"))
+                    self.root.after(0, lambda: messagebox.showerror(APP_NAME, self.t("scan_failed", err=e)))
 
         threading.Thread(target=worker, daemon=True).start()
 

@@ -12,6 +12,7 @@ Windows tray controller for Divoom Times Gate screens.
 - Live device health indicator (ONLINE/OFFLINE).
 - GIF animated previews in UI.
 - Hot theme switching (dark/light) without restart.
+- Selectable UI language: English / Spanish.
 - In-app Auto-start toggle for Windows startup.
 
 ## Why this exists
