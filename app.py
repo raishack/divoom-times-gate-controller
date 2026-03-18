@@ -25,7 +25,7 @@ IMG_SIZE = 128
 DEFAULT_QUALITY = 85
 DEFAULT_SPEED = 100
 SCREEN_COUNT = 5
-PREVIEW_SIZE = 288
+PREVIEW_SIZE = 384
 
 
 def appdata_dir() -> Path:
@@ -501,8 +501,9 @@ class KeeperUI:
             row_base = i * 2
             tk.Label(grid, text=self.t("screen_n", n=i+1), bg=self.colors["bg"], fg=self.colors["accent"], font=("Segoe UI", 10, "bold")).grid(row=row_base, column=0, sticky="nw", pady=(8, 2), padx=(8, 4))
 
-            preview = tk.Label(grid, text=self.t("no_preview"), width=1, height=1, bg=self.colors["input"], fg=self.colors["muted"], relief="groove", padx=8, pady=8)
+            preview = tk.Label(grid, text=self.t("no_preview"), width=1, height=1, bg=self.colors["input"], fg=self.colors["muted"], relief="groove", padx=8, pady=8, cursor="hand2")
             preview.grid(row=row_base, column=1, rowspan=2, sticky="w", pady=(8, 8), padx=(0, 8))
+            preview.bind("<Button-1>", lambda _e, idx=i: self.open_preview_zoom(idx))
             self.preview_labels.append(preview)
 
             entry = tk.Entry(grid, width=78, bg=self.colors["input"], fg=self.colors["fg"], insertbackground=self.colors["fg"])
@@ -559,6 +560,31 @@ class KeeperUI:
         self.preview_labels[idx].configure(image=frame, text="")
         self.preview_refs[idx] = frame
         self.preview_anim_after_id[idx] = self.root.after(180, lambda: self._tick_preview_anim(idx))
+
+    def open_preview_zoom(self, idx: int) -> None:
+        if idx >= len(self.entries) or self.root is None:
+            return
+        path = self.entries[idx].get().strip()
+        if not path or not Path(path).exists():
+            return
+
+        dlg = tk.Toplevel(self.root)
+        dlg.title(self.t("screen_n", n=idx + 1))
+        dlg.configure(bg=self.colors["bg"])
+        dlg.geometry("760x760")
+        dlg.minsize(520, 520)
+
+        holder = tk.Label(dlg, bg=self.colors["bg"])
+        holder.pack(fill="both", expand=True, padx=12, pady=12)
+
+        try:
+            img = Image.open(path).convert("RGB")
+            img.thumbnail((700, 700), Image.LANCZOS)
+            tk_img = ImageTk.PhotoImage(img)
+            holder.configure(image=tk_img)
+            holder.image = tk_img
+        except Exception as e:
+            holder.configure(text=self.t("preview_failed", err=e), fg=self.colors["err"])
 
     def refresh_preview(self, idx: int) -> None:
         if idx >= len(self.entries):
