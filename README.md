@@ -16,7 +16,9 @@ Windows tray controller for Divoom Times Gate screens.
 
 ## Why this exists
 
-Times Gate can lose current screen state after device restarts or unstable sessions. This app keeps a "desired state" profile and reapplies it automatically.
+This app exists because the official Divoom software flow has reliability issues in real-world use. In this setup, the K2x3 device may reboot by itself and lose the active screen state.
+
+To mitigate that, this controller keeps a persistent "desired state" profile (5 slots) and reapplies it automatically on schedule and on startup.
 
 ## Technical base
 
