@@ -280,6 +280,10 @@ class KeeperUI:
         self.preview_anim_after_id: List[Optional[str]] = [None] * SCREEN_COUNT
         self.health_label: Optional[tk.Label] = None
         self.startup_toggle_btn: Optional[tk.Button] = None
+        self.big_preview_label: Optional[tk.Label] = None
+        self.big_preview_meta: Optional[tk.Label] = None
+        self.big_preview_ref: Optional[ImageTk.PhotoImage] = None
+        self.active_preview_idx: int = 0
         self.ip_var = None
         self.interval_var = None
         self.quality_var = None
@@ -503,7 +507,7 @@ class KeeperUI:
 
             preview = tk.Label(grid, text=self.t("no_preview"), width=1, height=1, bg=self.colors["input"], fg=self.colors["muted"], relief="groove", padx=8, pady=8, cursor="hand2")
             preview.grid(row=row_base, column=1, rowspan=2, sticky="w", pady=(8, 8), padx=(0, 8))
-            preview.bind("<Button-1>", lambda _e, idx=i: self.open_preview_zoom(idx))
+            preview.bind("<Button-1>", lambda _e, idx=i: (self.set_active_preview(idx), self.open_preview_zoom(idx)))
             self.preview_labels.append(preview)
 
             entry = tk.Entry(grid, width=78, bg=self.colors["input"], fg=self.colors["fg"], insertbackground=self.colors["fg"])
@@ -511,6 +515,7 @@ class KeeperUI:
             entry.grid(row=row_base, column=2, sticky="we", padx=6)
             self.entries.append(entry)
             entry.bind("<FocusOut>", lambda _e, idx=i: self.refresh_preview(idx))
+            entry.bind("<FocusIn>", lambda _e, idx=i: self.set_active_preview(idx))
 
             actions = tk.Frame(grid, bg=self.colors["bg"])
             actions.grid(row=row_base, column=3, sticky="e", padx=4)
@@ -525,6 +530,22 @@ class KeeperUI:
 
         for i in range(SCREEN_COUNT):
             self.refresh_preview(i)
+
+        preview_panel = ttk.LabelFrame(self.root, text="Live preview", style="Card.TLabelframe")
+        preview_panel.pack(fill="both", expand=False, padx=12, pady=(0, 8))
+        self.big_preview_label = tk.Label(preview_panel, text=self.t("no_preview"), bg=self.colors["input"], fg=self.colors["muted"], relief="groove", padx=8, pady=8)
+        self.big_preview_label.pack(side="left", padx=10, pady=10)
+        self.big_preview_meta = tk.Label(preview_panel, text="", bg=self.colors["bg"], fg=self.colors["muted"], justify="left", anchor="w")
+        self.big_preview_meta.pack(side="left", fill="both", expand=True, padx=10)
+
+        # Default to first non-empty slot
+        first_non_empty = 0
+        for i, e in enumerate(self.entries):
+            if e.get().strip():
+                first_non_empty = i
+                break
+        self.active_preview_idx = first_non_empty
+        self.refresh_big_preview(self.active_preview_idx)
 
         self.refresh_health()
 
@@ -560,6 +581,34 @@ class KeeperUI:
         self.preview_labels[idx].configure(image=frame, text="")
         self.preview_refs[idx] = frame
         self.preview_anim_after_id[idx] = self.root.after(180, lambda: self._tick_preview_anim(idx))
+
+    def set_active_preview(self, idx: int) -> None:
+        self.active_preview_idx = idx
+        self.refresh_big_preview(idx)
+
+    def refresh_big_preview(self, idx: int) -> None:
+        if self.root is None or self.big_preview_label is None or idx >= len(self.entries):
+            return
+        path = self.entries[idx].get().strip()
+        if not path or not Path(path).exists():
+            self.big_preview_label.configure(image="", text=self.t("no_preview"), bg=self.colors["input"], fg=self.colors["muted"])
+            if self.big_preview_meta is not None:
+                self.big_preview_meta.configure(text=self.t("no_file_selected"))
+            self.big_preview_ref = None
+            return
+        try:
+            img = Image.open(path).convert("RGB")
+            img.thumbnail((560, 560), Image.LANCZOS)
+            tk_img = ImageTk.PhotoImage(img)
+            self.big_preview_label.configure(image=tk_img, text="")
+            self.big_preview_ref = tk_img
+            if self.big_preview_meta is not None:
+                self.big_preview_meta.configure(text=f"{self.t('screen_n', n=idx+1)}\n{Path(path).name}\n{img.width}x{img.height}")
+        except Exception as e:
+            self.big_preview_label.configure(image="", text=self.t("preview_error"), bg=self.colors["preview_bg"], fg=self.colors["err"])
+            if self.big_preview_meta is not None:
+                self.big_preview_meta.configure(text=self.t("preview_failed", err=e))
+            self.big_preview_ref = None
 
     def open_preview_zoom(self, idx: int) -> None:
         if idx >= len(self.entries) or self.root is None:
@@ -632,6 +681,9 @@ class KeeperUI:
             label.configure(image="", text=self.t("preview_error"), bg=self.colors["preview_bg"], fg=self.colors["err"])
             meta.configure(text=self.t("preview_failed", err=e))
             self.preview_refs[idx] = None
+
+        if idx == self.active_preview_idx:
+            self.refresh_big_preview(idx)
 
     def probe_health(self) -> bool:
         ip = self.ip_var.get().strip() if self.ip_var else self.app.cfg.data.get("device_ip", "")
