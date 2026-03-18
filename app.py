@@ -25,7 +25,7 @@ IMG_SIZE = 128
 DEFAULT_QUALITY = 85
 DEFAULT_SPEED = 100
 SCREEN_COUNT = 5
-PREVIEW_SIZE = 384
+PREVIEW_SIZE = 96
 
 
 def appdata_dir() -> Path:
@@ -62,6 +62,7 @@ def default_config() -> dict:
         "ui_theme": "dark",
         "ui_lang": "en",
         "screens": [{"path": ""} for _ in range(SCREEN_COUNT)],
+        "device_profiles": {},
     }
 
 
@@ -280,10 +281,6 @@ class KeeperUI:
         self.preview_anim_after_id: List[Optional[str]] = [None] * SCREEN_COUNT
         self.health_label: Optional[tk.Label] = None
         self.startup_toggle_btn: Optional[tk.Button] = None
-        self.big_preview_label: Optional[tk.Label] = None
-        self.big_preview_meta: Optional[tk.Label] = None
-        self.big_preview_ref: Optional[ImageTk.PhotoImage] = None
-        self.active_preview_idx: int = 0
         self.ip_var = None
         self.interval_var = None
         self.quality_var = None
@@ -294,6 +291,9 @@ class KeeperUI:
         self.theme_box = None
         self.lang_var = None
         self.lang_box = None
+        self.device_var = None
+        self.device_box = None
+        self.detected_devices: List[str] = []
         self.lang = str(self.app.cfg.data.get("ui_lang", "en"))
         self.colors = {}
 
@@ -307,6 +307,7 @@ class KeeperUI:
                 "speed": "Speed",
                 "theme": "Theme",
                 "language": "Language",
+                "device_select": "Detected device",
                 "resend_on_startup": "Resend on startup",
                 "start_with_windows": "Start with Windows",
                 "device_checking": "Device: checking...",
@@ -358,6 +359,7 @@ class KeeperUI:
                 "speed": "Velocidad",
                 "theme": "Tema",
                 "language": "Idioma",
+                "device_select": "Dispositivo detectado",
                 "resend_on_startup": "Reenviar al iniciar",
                 "start_with_windows": "Iniciar con Windows",
                 "device_checking": "Dispositivo: comprobando...",
@@ -445,8 +447,12 @@ class KeeperUI:
 
         self.root = tk.Tk()
         self.root.title(APP_NAME)
-        self.root.geometry("1320x860")
-        self.root.minsize(1180, 760)
+        screen_w = self.root.winfo_screenwidth()
+        screen_h = self.root.winfo_screenheight()
+        win_w = min(1320, max(1100, screen_w - 80))
+        win_h = min(860, max(680, screen_h - 120))
+        self.root.geometry(f"{win_w}x{win_h}")
+        self.root.minsize(1060, 640)
         self.root.configure(bg=self.colors["bg"])
         self.root.protocol("WM_DELETE_WINDOW", self.hide)
 
@@ -466,6 +472,13 @@ class KeeperUI:
         self.startup_var = tk.BooleanVar(master=self.root, value=bool(self.app.cfg.data.get("start_with_windows", True)))
         self.theme_var = tk.StringVar(master=self.root, value=("Light" if theme == "light" else "Dark"))
         self.lang_var = tk.StringVar(master=self.root, value=("Español" if self.lang == "es" else "English"))
+        self.device_var = tk.StringVar(master=self.root, value=self.app.cfg.data.get("device_ip", ""))
+
+        current_ip = self.app.cfg.data.get("device_ip", "").strip()
+        if current_ip:
+            profiles = self.app.cfg.data.setdefault("device_profiles", {})
+            if current_ip in profiles and isinstance(profiles[current_ip], dict):
+                self.app.cfg.data["screens"] = profiles[current_ip].get("screens", self.app.cfg.data.get("screens", []))
 
         top = ttk.LabelFrame(self.root, text=self.t("connection_schedule"), style="Card.TLabelframe")
         top.pack(fill="x", padx=12, pady=(12, 8))
@@ -495,57 +508,74 @@ class KeeperUI:
         tk.Checkbutton(top, text=self.t("resend_on_startup"), variable=self.resend_var, bg=self.colors["bg"], fg=self.colors["fg"], selectcolor=self.colors["bg"], activebackground=self.colors["bg"]).grid(row=1, column=0, columnspan=3, sticky="w", pady=6)
         tk.Checkbutton(top, text=self.t("start_with_windows"), variable=self.startup_var, bg=self.colors["bg"], fg=self.colors["fg"], selectcolor=self.colors["bg"], activebackground=self.colors["bg"]).grid(row=1, column=3, columnspan=3, sticky="w", pady=6)
 
-        self.health_label = tk.Label(top, text=self.t("device_checking"), bg=self.colors["bg"], fg=self.colors["warn"], font=("Segoe UI", 9, "bold"))
-        self.health_label.grid(row=1, column=6, columnspan=2, sticky="e", padx=6)
+        tk.Label(top, text=self.t("device_select"), bg=self.colors["bg"], fg=self.colors["fg"]).grid(row=1, column=6, sticky="w")
+        self.device_box = ttk.Combobox(top, textvariable=self.device_var, values=[self.app.cfg.data.get("device_ip", "")], width=20, state="readonly")
+        self.device_box.grid(row=1, column=7, columnspan=3, sticky="w", padx=6)
+        self.device_box.bind("<<ComboboxSelected>>", lambda _e: self.on_device_selected())
+        self.set_detected_devices([self.app.cfg.data.get("device_ip", "")])
 
-        grid = ttk.LabelFrame(self.root, text=self.t("screen_slots"), style="Card.TLabelframe")
-        grid.pack(fill="both", expand=True, padx=12, pady=8)
+        self.health_label = tk.Label(top, text=self.t("device_checking"), bg=self.colors["bg"], fg=self.colors["warn"], font=("Segoe UI", 9, "bold"))
+        self.health_label.grid(row=1, column=10, columnspan=2, sticky="e", padx=6)
+
+        slots_box = ttk.LabelFrame(self.root, text=self.t("screen_slots"), style="Card.TLabelframe")
+        slots_box.pack(fill="both", expand=True, padx=12, pady=8)
+
+        canvas = tk.Canvas(slots_box, bg=self.colors["bg"], highlightthickness=0)
+        vscroll = tk.Scrollbar(slots_box, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=vscroll.set)
+        vscroll.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        grid = tk.Frame(canvas, bg=self.colors["bg"])
+        grid_window = canvas.create_window((0, 0), window=grid, anchor="nw")
+
+        def _on_frame_config(_event=None):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def _on_canvas_config(event):
+            canvas.itemconfigure(grid_window, width=event.width)
+
+        grid.bind("<Configure>", _on_frame_config)
+        canvas.bind("<Configure>", _on_canvas_config)
+
+        def _on_mousewheel(event):
+            delta = event.delta
+            if delta == 0 and hasattr(event, 'num'):
+                delta = -120 if event.num == 5 else 120
+            canvas.yview_scroll(int(-1 * (delta / 120)), "units")
+
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        canvas.bind_all("<Button-4>", _on_mousewheel)
+        canvas.bind_all("<Button-5>", _on_mousewheel)
 
         for i in range(SCREEN_COUNT):
             row_base = i * 2
-            tk.Label(grid, text=self.t("screen_n", n=i+1), bg=self.colors["bg"], fg=self.colors["accent"], font=("Segoe UI", 10, "bold")).grid(row=row_base, column=0, sticky="nw", pady=(8, 2), padx=(8, 4))
+            tk.Label(grid, text=self.t("screen_n", n=i+1), bg=self.colors["bg"], fg=self.colors["accent"], font=("Segoe UI", 10, "bold")).grid(row=row_base, column=0, sticky="nw", pady=(4, 1), padx=(8, 4))
 
-            preview = tk.Label(grid, text=self.t("no_preview"), width=1, height=1, bg=self.colors["input"], fg=self.colors["muted"], relief="groove", padx=8, pady=8, cursor="hand2")
-            preview.grid(row=row_base, column=1, rowspan=2, sticky="w", pady=(8, 8), padx=(0, 8))
-            preview.bind("<Button-1>", lambda _e, idx=i: (self.set_active_preview(idx), self.open_preview_zoom(idx)))
+            preview = tk.Label(grid, text=self.t("no_preview"), bg=self.colors["input"], fg=self.colors["muted"], relief="groove", padx=4, pady=4)
+            preview.grid(row=row_base + 1, column=0, sticky="nw", pady=(0, 4), padx=(8, 4))
             self.preview_labels.append(preview)
 
-            entry = tk.Entry(grid, width=78, bg=self.colors["input"], fg=self.colors["fg"], insertbackground=self.colors["fg"])
+            entry = tk.Entry(grid, width=86, bg=self.colors["input"], fg=self.colors["fg"], insertbackground=self.colors["fg"])
             entry.insert(0, self.app.cfg.data["screens"][i].get("path", ""))
-            entry.grid(row=row_base, column=2, sticky="we", padx=6)
+            entry.grid(row=row_base, column=1, sticky="we", padx=6)
             self.entries.append(entry)
             entry.bind("<FocusOut>", lambda _e, idx=i: self.refresh_preview(idx))
-            entry.bind("<FocusIn>", lambda _e, idx=i: self.set_active_preview(idx))
 
             actions = tk.Frame(grid, bg=self.colors["bg"])
-            actions.grid(row=row_base, column=3, sticky="e", padx=4)
+            actions.grid(row=row_base, column=2, sticky="e", padx=4)
             tk.Button(actions, text=self.t("browse"), command=lambda idx=i: self.pick_file(idx), bg=self.colors["button"], fg=self.colors["fg"]).pack(side="left", padx=2)
             tk.Button(actions, text=self.t("send"), command=lambda idx=i: self.send_one(idx), bg=self.colors["accent"], fg=self.colors["fg"]).pack(side="left", padx=2)
 
             meta = tk.Label(grid, text="", bg=self.colors["bg"], fg=self.colors["muted"], anchor="w")
-            meta.grid(row=row_base + 1, column=2, columnspan=2, sticky="we", padx=6, pady=(0, 6))
+            meta.grid(row=row_base + 1, column=1, columnspan=2, sticky="we", padx=6, pady=(0, 4))
             self.preview_meta_labels.append(meta)
 
-        grid.grid_columnconfigure(2, weight=1)
+        grid.grid_columnconfigure(1, weight=1)
 
         for i in range(SCREEN_COUNT):
             self.refresh_preview(i)
 
-        preview_panel = ttk.LabelFrame(self.root, text="Live preview", style="Card.TLabelframe")
-        preview_panel.pack(fill="both", expand=False, padx=12, pady=(0, 8))
-        self.big_preview_label = tk.Label(preview_panel, text=self.t("no_preview"), bg=self.colors["input"], fg=self.colors["muted"], relief="groove", padx=8, pady=8)
-        self.big_preview_label.pack(side="left", padx=10, pady=10)
-        self.big_preview_meta = tk.Label(preview_panel, text="", bg=self.colors["bg"], fg=self.colors["muted"], justify="left", anchor="w")
-        self.big_preview_meta.pack(side="left", fill="both", expand=True, padx=10)
-
-        # Default to first non-empty slot
-        first_non_empty = 0
-        for i, e in enumerate(self.entries):
-            if e.get().strip():
-                first_non_empty = i
-                break
-        self.active_preview_idx = first_non_empty
-        self.refresh_big_preview(self.active_preview_idx)
 
         self.refresh_health()
 
@@ -581,34 +611,6 @@ class KeeperUI:
         self.preview_labels[idx].configure(image=frame, text="")
         self.preview_refs[idx] = frame
         self.preview_anim_after_id[idx] = self.root.after(180, lambda: self._tick_preview_anim(idx))
-
-    def set_active_preview(self, idx: int) -> None:
-        self.active_preview_idx = idx
-        self.refresh_big_preview(idx)
-
-    def refresh_big_preview(self, idx: int) -> None:
-        if self.root is None or self.big_preview_label is None or idx >= len(self.entries):
-            return
-        path = self.entries[idx].get().strip()
-        if not path or not Path(path).exists():
-            self.big_preview_label.configure(image="", text=self.t("no_preview"), bg=self.colors["input"], fg=self.colors["muted"])
-            if self.big_preview_meta is not None:
-                self.big_preview_meta.configure(text=self.t("no_file_selected"))
-            self.big_preview_ref = None
-            return
-        try:
-            img = Image.open(path).convert("RGB")
-            img.thumbnail((560, 560), Image.LANCZOS)
-            tk_img = ImageTk.PhotoImage(img)
-            self.big_preview_label.configure(image=tk_img, text="")
-            self.big_preview_ref = tk_img
-            if self.big_preview_meta is not None:
-                self.big_preview_meta.configure(text=f"{self.t('screen_n', n=idx+1)}\n{Path(path).name}\n{img.width}x{img.height}")
-        except Exception as e:
-            self.big_preview_label.configure(image="", text=self.t("preview_error"), bg=self.colors["preview_bg"], fg=self.colors["err"])
-            if self.big_preview_meta is not None:
-                self.big_preview_meta.configure(text=self.t("preview_failed", err=e))
-            self.big_preview_ref = None
 
     def open_preview_zoom(self, idx: int) -> None:
         if idx >= len(self.entries) or self.root is None:
@@ -682,8 +684,6 @@ class KeeperUI:
             meta.configure(text=self.t("preview_failed", err=e))
             self.preview_refs[idx] = None
 
-        if idx == self.active_preview_idx:
-            self.refresh_big_preview(idx)
 
     def probe_health(self) -> bool:
         ip = self.ip_var.get().strip() if self.ip_var else self.app.cfg.data.get("device_ip", "")
@@ -789,6 +789,71 @@ class KeeperUI:
         if not was_visible:
             self.hide()
 
+    def _current_screens_from_ui(self) -> List[dict]:
+        screens = []
+        for entry in self.entries:
+            screens.append({"path": entry.get().strip()})
+        while len(screens) < SCREEN_COUNT:
+            screens.append({"path": ""})
+        return screens[:SCREEN_COUNT]
+
+    def _load_screens_to_ui(self, screens: List[dict]) -> None:
+        for i, entry in enumerate(self.entries):
+            val = ""
+            if i < len(screens) and isinstance(screens[i], dict):
+                val = screens[i].get("path", "") or ""
+            entry.delete(0, tk.END)
+            entry.insert(0, val)
+            self.refresh_preview(i)
+
+    def _ensure_device_profile(self, ip: str) -> None:
+        profiles = self.app.cfg.data.setdefault("device_profiles", {})
+        if ip and ip not in profiles:
+            profiles[ip] = {
+                "screens": [{"path": ""} for _ in range(SCREEN_COUNT)]
+            }
+
+    def on_device_selected(self) -> None:
+        if self.device_var is None:
+            return
+        selected = self.device_var.get().strip()
+        if not selected:
+            return
+
+        previous_ip = self.app.cfg.data.get("device_ip", "").strip()
+        profiles = self.app.cfg.data.setdefault("device_profiles", {})
+
+        # Persist current UI screens into previous device profile before switching.
+        if previous_ip:
+            profiles[previous_ip] = {"screens": self._current_screens_from_ui()}
+
+        self._ensure_device_profile(selected)
+
+        # Load selected device profile into active screens + UI.
+        selected_profile = profiles.get(selected, {})
+        selected_screens = selected_profile.get("screens", [{"path": ""} for _ in range(SCREEN_COUNT)])
+        self.app.cfg.data["screens"] = selected_screens
+        self._load_screens_to_ui(selected_screens)
+
+        if self.ip_var is not None:
+            self.ip_var.set(selected)
+        self.app.cfg.data["device_ip"] = selected
+        self.app.cfg.save()
+        self.refresh_health()
+
+    def set_detected_devices(self, devices: List[str]) -> None:
+        if self.device_box is None:
+            return
+        cleaned = [d for d in devices if d]
+        if not cleaned:
+            current = self.app.cfg.data.get("device_ip", "")
+            cleaned = [current] if current else []
+        self.detected_devices = cleaned
+        self.device_box["values"] = cleaned
+        if self.device_var is not None:
+            if (self.device_var.get() not in cleaned) and cleaned:
+                self.device_var.set(cleaned[0])
+
     def on_language_changed(self) -> None:
         if self.lang_var is None:
             return
@@ -859,6 +924,12 @@ class KeeperUI:
             for i, entry in enumerate(self.entries):
                 self.app.cfg.data["screens"][i]["path"] = entry.get().strip()
                 self.refresh_preview(i)
+
+            active_ip = self.app.cfg.data.get("device_ip", "").strip()
+            if active_ip:
+                profiles = self.app.cfg.data.setdefault("device_profiles", {})
+                profiles[active_ip] = {"screens": self._current_screens_from_ui()}
+
             self.app.cfg.save()
             StartupManager.set_enabled(self.app.cfg.data["start_with_windows"])
             self.update_startup_button()
@@ -918,6 +989,7 @@ class KeeperUI:
 
                     current = self.ip_var.get().strip() if self.ip_var else ""
                     chosen = found[0]
+                    self.set_detected_devices(found)
 
                     if len(found) == 1:
                         apply_ip = messagebox.askyesno(
@@ -928,20 +1000,15 @@ class KeeperUI:
                             if current:
                                 messagebox.showinfo(APP_NAME, self.t("scan_keep_ip"))
                             return
+                        if self.device_var is not None:
+                            self.device_var.set(chosen)
+                        self.on_device_selected()
+                        messagebox.showinfo(APP_NAME, self.t("active_ip_updated", ip=chosen))
                     else:
-                        selected = self.choose_device_dialog(found, suggested=chosen)
-                        if not selected:
-                            if current:
-                                messagebox.showinfo(APP_NAME, self.t("scan_keep_ip"))
-                            return
-                        chosen = selected
-
-                    if self.ip_var is not None:
-                        self.ip_var.set(chosen)
-                    self.app.cfg.data["device_ip"] = chosen
-                    self.app.cfg.save()
-                    self.refresh_health()
-                    messagebox.showinfo(APP_NAME, self.t("active_ip_updated", ip=chosen))
+                        # Multi-device case: user picks from dropdown
+                        if self.device_var is not None and current in found:
+                            self.device_var.set(current)
+                        messagebox.showinfo(APP_NAME, self.t("detected_multi_devices", list="\n- ".join(found)))
 
                 if self.root is not None:
                     self.root.after(0, done)
